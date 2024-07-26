@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Asset Detail{% endblock %}
+
+{% block content %}
+<h1>Asset Detail</h1>
+<p>Type: {{ asset.asset_type }}</p>
+<p>Number: {{ asset.asset_number }}</p>
+<p>Location: {{ asset.location }}</p>
+<p>Room Number: {{ asset.room_number }}</p>
+<p>Purchase Date: {{ asset.purchase_date }}</p>
+<p>Depreciation Date: {{ asset.depreciation_date }}</p>
+<p>Status: {% if asset.is_allocated %}Allocated{% else %}Available{% endif %}</p>
+
+{% if asset.is_allocated %}
+    {% with current_allocation=asset.allocation_set.latest('assigned_date') %}
+        <p>Allocated to: {{ current_allocation.user }}</p>
+        <p>Assigned Date: {{ current_allocation.assigned_date }}</p>
+        <a href="{% url 'deallocate_asset' current_allocation.pk %}">Deallocate</a>
+    {% endwith %}
+{% else %}
+    <a href="{% url 'allocate_asset' %}?asset={{ asset.pk }}">Allocate</a>
+{% endif %}
+
+<a href="{% url 'asset_update' asset.pk %}">Edit Asset</a>
+{% endblock %}

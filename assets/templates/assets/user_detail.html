@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}User Detail{% endblock %}
+
+{% block content %}
+<h1>User Detail</h1>
+<p>Name: {{ user.name }}</p>
+
+<h2>Allocated Assets</h2>
+<ul>
+{% for allocation in allocations %}
+    <li>{{ allocation.asset.asset_type }} - {{ allocation.asset.asset_number }} (Assigned on: {{ allocation.assigned_date }})</li>
+{% empty %}
+    <li>No assets currently allocated to this user.</li>
+{% endfor %}
+</ul>
+
+<a href="{% url 'user_update' user.pk %}">Edit User</a>
+{% endblock %}

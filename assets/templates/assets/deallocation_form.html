@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}Deallocate Asset{% endblock %}
+
+{% block content %}
+<h1>Deallocate Asset</h1>
+<p>Asset: {{ allocation.asset }}</p>
+<p>User: {{ allocation.user }}</p>
+<p>Assigned Date: {{ allocation.assigned_date }}</p>
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Deallocate</button>
+</form>
+{% endblock %}

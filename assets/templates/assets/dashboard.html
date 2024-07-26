@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="row">
+    <div class="col-md-4">
+        <h2>Asset Count: {{ asset_count }}</h2>
+    </div>
+    <div class="col-md-4">
+        <h2>User Count: {{ user_count }}</h2>
+    </div>
+    <div class="col-md-4">
+        <h2>Allocation Count: {{ allocation_count }}</h2>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <h3>Asset Allocation Chart</h3>
+        <canvas id="assetAllocationChart" width="400" height="200"></canvas>
+    </div>
+    <div class="col-md-6">
+        <h3>Recent Allocations</h3>
+        <ul class="list-group">
+            {% for allocation in recent_allocations %}
+                <li class="list-group-item">{{ allocation.asset }} allocated to {{ allocation.user }} on {{ allocation.assigned_date }}</li>
+            {% empty %}
+                <li class="list-group-item">No recent allocations.</li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    $(document).ready(function() {
+        $.get('{% url "asset_allocation_chart" %}', function(data) {
+            var ctx = document.getElementById('assetAllocationChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.labels,
+                    datasets: [{
+                        label: 'Allocated',
+                        data: data.datasets[0],
+                        backgroundColor: data.colors[0],
+                    }, {
+                        label: 'Unallocated',
+                        data: data.datasets[1],
+                        backgroundColor: data.colors[1],
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: {
+                            stacked: true,
+                        },
+                        y: {
+                            stacked: true
+                        }
+                    }
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}

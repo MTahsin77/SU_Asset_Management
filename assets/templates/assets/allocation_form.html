@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block title %}Allocate Asset{% endblock %}
+
+{% block content %}
+<h1>Allocate Asset</h1>
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Allocate</button>
+</form>
+{% endblock %}

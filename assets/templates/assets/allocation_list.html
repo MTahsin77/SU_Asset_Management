@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}Current Allocations{% endblock %}
+
+{% block content %}
+<h1>Current Allocations</h1>
+<a href="{% url 'allocate_asset' %}">Allocate New Asset</a>
+<ul>
+{% for allocation in allocations %}
+    <li>
+        {{ allocation.asset }} allocated to {{ allocation.user }} 
+        (Assigned on: {{ allocation.assigned_date }})
+        <a href="{% url 'deallocate_asset' allocation.pk %}">Deallocate</a>
+    </li>
+{% empty %}
+    <li>No current allocations.</li>
+{% endfor %}
+</ul>
+{% endblock %}
