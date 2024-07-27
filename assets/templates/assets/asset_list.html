@@ -12,6 +12,7 @@
             <th>Asset Number</th>
             <th>Location</th>
             <th>Actions</th>
+            <th>Department</th>
         </tr>
     </thead>
     <tbody>
@@ -19,6 +20,7 @@
         <tr>
             <td>{{ asset.asset_type }}</td>
             <td>{{ asset.asset_number }}</td>
+            <td>{{ asset.department }}</td>
             <td>{{ asset.location }}</td>
             <td>
                 <a href="{% url 'asset_detail' asset.pk %}" class="btn btn-sm btn-info">View</a>

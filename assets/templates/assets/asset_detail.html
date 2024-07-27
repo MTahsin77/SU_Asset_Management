@@ -3,6 +3,56 @@
 {% block title %}Asset Detail{% endblock %}
 
 {% block content %}
+<style>
+    h1 {
+        color: #e84253;
+    }
+
+    p {
+        font-size: 1.1rem;
+        color: #000000;
+    }
+
+    a {
+        color: #e84253;
+        text-decoration: none;
+        margin-right: 10px;
+    }
+
+    a:hover {
+        color: #d73a4b;
+        text-decoration: underline;
+    }
+
+    .btn {
+        display: inline-block;
+        padding: 10px 20px;
+        font-size: 1rem;
+        border: none;
+        border-radius: 5px;
+        text-decoration: none;
+        margin-top: 10px;
+    }
+
+    .btn-edit {
+        background-color: #000000;
+        color: #ffffff;
+    }
+
+    .btn-edit:hover {
+        background-color: #333333;
+    }
+
+    .btn-deallocate, .btn-allocate {
+        background-color: #e84253;
+        color: #ffffff;
+    }
+
+    .btn-deallocate:hover, .btn-allocate:hover {
+        background-color: #d73a4b;
+    }
+</style>
+
 <h1>Asset Detail</h1>
 <p>Type: {{ asset.asset_type }}</p>
 <p>Number: {{ asset.asset_number }}</p>
@@ -16,11 +66,11 @@
     {% with current_allocation=asset.allocation_set.latest('assigned_date') %}
         <p>Allocated to: {{ current_allocation.user }}</p>
         <p>Assigned Date: {{ current_allocation.assigned_date }}</p>
-        <a href="{% url 'deallocate_asset' current_allocation.pk %}">Deallocate</a>
+        <a href="{% url 'deallocate_asset' current_allocation.pk %}" class="btn btn-deallocate">Deallocate</a>
     {% endwith %}
 {% else %}
-    <a href="{% url 'allocate_asset' %}?asset={{ asset.pk }}">Allocate</a>
+    <a href="{% url 'allocate_asset' %}?asset={{ asset.pk }}" class="btn btn-allocate">Allocate</a>
 {% endif %}
 
-<a href="{% url 'asset_update' asset.pk %}">Edit Asset</a>
+<a href="{% url 'asset_update' asset.pk %}" class="btn btn-edit">Edit Asset</a>
 {% endblock %}

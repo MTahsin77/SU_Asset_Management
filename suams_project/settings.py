@@ -18,6 +18,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'chartjs',
     'assets',
+    'rest_framework',
 ]
 
 MIDDLEWARE = [
@@ -77,7 +78,10 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'assets'),
+]
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
