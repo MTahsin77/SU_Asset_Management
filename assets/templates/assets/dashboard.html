@@ -1,77 +1,198 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Dashboard{% endblock %}
-
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    .dashboard-card {
+        margin-bottom: 20px;
+    }
+    .chart-container {
+        position: relative;
+        height: 300px;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
-<h1>Dashboard</h1>
+<div class="container mt-4">
+    <h1>Dashboard</h1>
 
-<div class="row">
-    <div class="col-md-4">
-        <h2>Asset Count: {{ asset_count }}</h2>
+    <div class="row">
+        <div class="col-md-4 dashboard-card">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Asset Overview</h5>
+                    <p>Total Assets: {{ total_assets }}</p>
+                    <p>Allocated Assets: {{ allocated_assets }}</p>
+                    <p>Unallocated Assets: {{ unallocated_assets }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-8 dashboard-card">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Asset Allocation by Type</h5>
+                    <div class="chart-container">
+                        <canvas id="assetAllocationChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-    <div class="col-md-4">
-        <h2>User Count: {{ user_count }}</h2>
-    </div>
-    <div class="col-md-4">
-        <h2>Allocation Count: {{ allocation_count }}</h2>
-    </div>
-</div>
 
-<div class="row mt-4">
-    <div class="col-md-6">
-        <h3>Asset Allocation Chart</h3>
-        <canvas id="assetAllocationChart" width="400" height="200"></canvas>
+    <div class="row">
+        <div class="col-md-6 dashboard-card">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Asset Value Over Time</h5>
+                    <div class="chart-container">
+                        <canvas id="assetValueChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 dashboard-card">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Top Departments by Asset Count</h5>
+                    <div class="chart-container">
+                        <canvas id="topDepartmentsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-    <div class="col-md-6">
-        <h3>Recent Allocations</h3>
-        <ul class="list-group">
-            {% for allocation in recent_allocations %}
-                <li class="list-group-item">{{ allocation.asset }} allocated to {{ allocation.user }} on {{ allocation.assigned_date }}</li>
-            {% empty %}
-                <li class="list-group-item">No recent allocations.</li>
-            {% endfor %}
-        </ul>
+
+    <div class="row">
+        <div class="col-md-6 dashboard-card">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Depreciation Summary</h5>
+                    <p>Total Purchase Value: £{{ total_purchase_value|floatformat:2 }}</p>
+                    <p>Total Current Value: £{{ total_current_value|floatformat:2 }}</p>
+                    <p>Total Depreciation: £{{ total_depreciation|floatformat:2 }}</p>
+                    <div class="chart-container">
+                        <canvas id="depreciationChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 dashboard-card">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Recent Acquisitions</h5>
+                    <ul class="list-group">
+                        {% for asset in recent_acquisitions %}
+                            <li class="list-group-item">
+                                {{ asset.asset_type.name }} - {{ asset.asset_number }} 
+                                (Purchased: {{ asset.purchase_date|date:"Y-m-d" }})
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
+
 <script>
-    $(document).ready(function() {
-        $.get('{% url "asset_allocation_chart" %}', function(data) {
-            var ctx = document.getElementById('assetAllocationChart').getContext('2d');
-            new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: data.labels,
-                    datasets: [{
-                        label: 'Allocated',
-                        data: data.datasets[0],
-                        backgroundColor: data.colors[0],
-                    }, {
-                        label: 'Unallocated',
-                        data: data.datasets[1],
-                        backgroundColor: data.colors[1],
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    scales: {
-                        x: {
-                            stacked: true,
-                        },
-                        y: {
-                            stacked: true
-                        }
-                    }
-                }
-            });
-        });
+    // Retrieve data from embedded scripts
+    const assetTypeData = JSON.parse(document.getElementById('asset-types-data').textContent);
+    const valueOverTimeData = JSON.parse(document.getElementById('value-over-time-data').textContent);
+    const topDepartmentsData = JSON.parse(document.getElementById('top-departments-data').textContent);
+    const depreciationData = JSON.parse(document.getElementById('depreciation-data').textContent);
+
+    // Asset Allocation Chart
+    var ctx = document.getElementById('assetAllocationChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: assetTypeData.map(item => item.name),
+            datasets: [{
+                label: 'Allocated',
+                data: assetTypeData.map(item => item.allocated),
+                backgroundColor: 'rgba(75, 192, 192, 0.6)'
+            }, {
+                label: 'Unallocated',
+                data: assetTypeData.map(item => item.total - item.allocated),
+                backgroundColor: 'rgba(255, 99, 132, 0.6)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { stacked: true },
+                y: { stacked: true, beginAtZero: true }
+            }
+        }
+    });
+
+    // Asset Value Over Time Chart
+    ctx = document.getElementById('assetValueChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: valueOverTimeData.map(item => item.date),
+            datasets: [{
+                label: 'Total Asset Value',
+                data: valueOverTimeData.map(item => item.value),
+                borderColor: 'rgba(75, 192, 192, 1)',
+                fill: false
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { beginAtZero: true }
+            }
+        }
+    });
+
+    // Top Departments Chart
+    ctx = document.getElementById('topDepartmentsChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: topDepartmentsData.map(item => item.name),
+            datasets: [{
+                data: topDepartmentsData.map(item => item.asset_count),
+                backgroundColor: [
+                    'rgba(255, 99, 132, 0.6)',
+                    'rgba(54, 162, 235, 0.6)',
+                    'rgba(255, 206, 86, 0.6)',
+                    'rgba(75, 192, 192, 0.6)',
+                    'rgba(153, 102, 255, 0.6)'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    });
+
+    // Depreciation Chart
+    ctx = document.getElementById('depreciationChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Current Value', 'Depreciation'],
+            datasets: [{
+                data: [depreciationData.currentValue, depreciationData.depreciation],
+                backgroundColor: ['rgba(75, 192, 192, 0.6)', 'rgba(255, 99, 132, 0.6)']
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false
+        }
     });
 </script>
+
 {% endblock %}

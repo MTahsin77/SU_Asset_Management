@@ -5,7 +5,7 @@ class AssetForm(forms.ModelForm):
     class Meta:
         model = Asset
         fields = ['asset_type', 'asset_number', 'location', 'room_number', 'department',
-                  'purchase_date', 'purchase_value', 'model', 'assigned_to', 'sticker_deployed']
+                  'purchase_date', 'purchase_value', 'assigned_to', 'sticker_deployed']
         widgets = {
             'asset_type': forms.Select(attrs={'class': 'form-control select2'}),
             'asset_number': forms.TextInput(attrs={'class': 'form-control'}),
@@ -14,7 +14,6 @@ class AssetForm(forms.ModelForm):
             'department': forms.Select(attrs={'class': 'form-control select2'}),
             'purchase_date': forms.DateInput(attrs={'class': 'form-control flatpickr-input', 'type': 'text'}),
             'purchase_value': forms.NumberInput(attrs={'class': 'form-control'}),
-            'model': forms.TextInput(attrs={'class': 'form-control'}),
             'assigned_to': forms.Select(attrs={'class': 'form-control select2'}),
             'sticker_deployed': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
@@ -27,7 +26,11 @@ class DepartmentForm(forms.ModelForm):
 class UserForm(forms.ModelForm):
     class Meta:
         model = User
-        fields = ['name']
+        fields = ['name', 'email']  # Include email, but it will be optional
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control'}),
+            'email': forms.EmailInput(attrs={'class': 'form-control'}),
+        }
 
 class AllocationForm(forms.ModelForm):
     class Meta:

@@ -1,19 +1,82 @@
 {% extends "base.html" %}
+{% load static %}
 
-{% block title %}User Detail{% endblock %}
+{% block title %}User Detail - {{ user.name }}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.10.24/css/dataTables.bootstrap4.min.css">
+{% endblock %}
 
 {% block content %}
-<h1>User Detail</h1>
-<p>Name: {{ user.name }}</p>
+<div class="container mt-4">
+    <h1>User Detail</h1>
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">{{ user.name }}</h5>
+            <p class="card-text"><strong>Email:</strong> {{ user.email|default:"Not provided" }}</p>
+        </div>
+    </div>
 
-<h2>Allocated Assets</h2>
-<ul>
-{% for allocation in allocations %}
-    <li>{{ allocation.asset.asset_type }} - {{ allocation.asset.asset_number }} (Assigned on: {{ allocation.assigned_date }})</li>
-{% empty %}
-    <li>No assets currently allocated to this user.</li>
-{% endfor %}
-</ul>
+    <h2>Allocated Assets</h2>
+    <table id="assetTable" class="table table-striped table-bordered">
+        <thead>
+            <tr>
+                <th>Asset Type</th>
+                <th>Asset Number</th>
+                <th>Department</th>
+                <th>Location</th>
+                <th>Room Number</th>
+                <th>Purchase Date</th>
+                <th>Purchase Value</th>
+                <th>Current Value</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for asset in assets %}
+            <tr>
+                <td>{{ asset.asset_type.name }}</td>
+                <td><a href="{% url 'asset_detail' asset.pk %}">{{ asset.asset_number }}</a></td>
+                <td>{{ asset.department.name }}</td>
+                <td>{{ asset.location.name }}</td>
+                <td>{{ asset.room_number.number }}</td>
+                <td>{{ asset.purchase_date }}</td>
+                <td>{{ asset.purchase_value }}</td>
+                <td>{{ asset.current_value }}</td>
+                <td>
+                    <a href="{% url 'asset_detail' asset.pk %}" class="btn btn-sm btn-info">View</a>
+                    {% if user.is_staff %}
+                    <a href="{% url 'asset_update' asset.pk %}" class="btn btn-sm btn-warning">Edit</a>
+                    <a href="{% url 'asset_delete' asset.pk %}" class="btn btn-sm btn-danger">Delete</a>
+                    {% endif %}
+                </td>
+            </tr>
+        {% empty %}
+            <tr>
+                <td colspan="9">No assets currently allocated to this user.</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
 
-<a href="{% url 'user_update' user.pk %}">Edit User</a>
+    <a href="{% url 'user_update' user.pk %}" class="btn btn-primary">Edit User</a>
+    <a href="{% url 'user_list' %}" class="btn btn-secondary">Back to User List</a>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.datatables.net/1.10.24/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.10.24/js/dataTables.bootstrap4.min.js"></script>
+<script>
+$(document).ready(function() {
+    $('#assetTable').DataTable({
+        "pageLength": 10,
+        "lengthChange": false,
+        "searching": false,
+        "language": {
+            "emptyTable": "No assets currently allocated to this user."
+        }
+    });
+});
+</script>
 {% endblock %}

@@ -18,54 +18,73 @@
     }
     .card {
         border: none;
+        border-radius: 0.5rem;
         box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
     }
     .card-header {
-        background-color: #e84253;
+        background-color: #343a40;
         color: white;
         font-weight: bold;
+        text-align: center;
+        font-size: 1.25rem;
+        border-top-left-radius: 0.5rem;
+        border-top-right-radius: 0.5rem;
     }
     .form-control, 
     .select2-container--bootstrap4 .select2-selection,
     .flatpickr-input {
         border: 1px solid #ced4da;
         border-radius: 0.25rem;
-        padding: 0.375rem 0.75rem;
-        height: calc(1.5em + 0.75rem + 2px);
+        padding: 0.5rem 0.75rem;
+        height: calc(1.5em + 1rem + 2px);
         width: 100%;
         font-size: 1rem;
         line-height: 1.5;
+        background-color: #ffffff;
     }
     .input-group .form-control {
         width: 100%;
     }
     .select2-container--bootstrap4 .select2-selection--single .select2-selection__arrow {
-        top: 4px;
+        top: 8px;
     }
     .btn-primary {
-        background-color: #e84253;
-        border-color: #e84253;
+        background-color: #007bff;
+        border-color: #007bff;
     }
     .btn-primary:hover, .btn-primary:focus {
-        background-color: #d73248;
-        border-color: #d73248;
+        background-color: #0056b3;
+        border-color: #0056b3;
     }
     .modal-header {
-        background-color: #e84253;
+        background-color: #343a40;
         color: white;
     }
     .modal-title {
         font-weight: bold;
     }
     .input-group-append .btn {
-        height: calc(1.5em + 0.75rem + 2px);
-        padding: 0.375rem 0.75rem;
+        height: calc(1.5em + 1rem + 2px);
+        padding: 0.5rem 0.75rem;
     }
     .flatpickr-input[readonly] {
         background-color: #fff;
     }
     .form-check-input {
         margin-top: 0.3rem;
+    }
+    .error-message {
+        color: #dc3545;
+        font-size: 0.875em;
+        margin-top: 0.25rem;
+    }
+    .btn-outline-secondary {
+        border-color: #007bff;
+        color: #007bff;
+    }
+    .btn-outline-secondary:hover, .btn-outline-secondary:focus {
+        background-color: #007bff;
+        color: white;
     }
 </style>
 {% endblock %}
@@ -147,19 +166,14 @@
                         {{ form.purchase_value }}
                     </div>
                     <div class="form-group col-md-6">
-                        {{ form.model.errors }}
-                        <label for="{{ form.model.id_for_label }}">Model:</label>
-                        {{ form.model }}
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group col-md-6">
                         {{ form.assigned_to.errors }}
                         <label for="{{ form.assigned_to.id_for_label }}">Assigned To:</label>
                         {{ form.assigned_to }}
                     </div>
-                    <div class="form-group col-md-6">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group col-md-12">
                         <div class="form-check">
                             {{ form.sticker_deployed }}
                             <label class="form-check-label" for="{{ form.sticker_deployed.id_for_label }}">
@@ -189,6 +203,7 @@
                 <form id="assetTypeForm">
                     {% csrf_token %}
                     {{ asset_type_form.as_p }}
+                    <div id="assetTypeError" class="error-message"></div>
                     <button type="submit" class="btn btn-primary">Add</button>
                 </form>
             </div>
@@ -210,6 +225,7 @@
                 <form id="locationForm">
                     {% csrf_token %}
                     {{ location_form.as_p }}
+                    <div id="locationError" class="error-message"></div>
                     <button type="submit" class="btn btn-primary">Add</button>
                 </form>
             </div>
@@ -231,6 +247,7 @@
                 <form id="roomNumberForm">
                     {% csrf_token %}
                     {{ room_number_form.as_p }}
+                    <div id="roomNumberError" class="error-message"></div>
                     <button type="submit" class="btn btn-primary">Add</button>
                 </form>
             </div>
@@ -252,6 +269,7 @@
                 <form id="departmentForm">
                     {% csrf_token %}
                     {{ department_form.as_p }}
+                    <div id="departmentError" class="error-message"></div>
                     <button type="submit" class="btn btn-primary">Add</button>
                 </form>
             </div>
@@ -275,7 +293,6 @@ $(document).ready(function() {
     flatpickr('#{{ form.purchase_date.id_for_label }}', {
         dateFormat: "Y-m-d",
         onChange: function(selectedDates, dateStr, instance) {
-            // Calculate and set the depreciation date
             var purchaseDate = new Date(dateStr);
             var depreciationDate = new Date(purchaseDate.setFullYear(purchaseDate.getFullYear() + 5));
             $('#depreciation_date').val(depreciationDate.toISOString().split('T')[0]);
@@ -308,61 +325,36 @@ $(document).ready(function() {
         minimumInputLength: 1
     });
 
-    $('#assetTypeForm').on('submit', function(e) {
-        e.preventDefault();
-        $.ajax({
-            url: '{% url "add_asset_type" %}',
-            type: 'POST',
-            data: $(this).serialize(),
-            success: function(response) {
-                var newOption = new Option(response.name, response.id, true, true);
-                $('#{{ form.asset_type.id_for_label }}').append(newOption).trigger('change');
-                $('#assetTypeModal').modal('hide');
-            }
+    function handleFormSubmission(formId, url, fieldId, errorDivId) {
+        $(formId).on('submit', function(e) {
+            e.preventDefault();
+            $.ajax({
+                url: url,
+                type: 'POST',
+                data: $(this).serialize(),
+                success: function(response) {
+                    console.log('Success:', response);
+                    var newOption = new Option(response.name, response.id, true, true);
+                    $(fieldId).append(newOption).trigger('change');
+                    $(formId).closest('.modal').modal('hide');
+                    $(errorDivId).text('');  // Clear any previous error messages
+                },
+                error: function(xhr, status, error) {
+                    console.error('Error:', xhr.responseJSON);
+                    var errorMessage = 'An error occurred. Please try again.';
+                    if (xhr.responseJSON && xhr.responseJSON.error) {
+                        errorMessage = xhr.responseJSON.error;
+                    }
+                    $(errorDivId).text(errorMessage);
+                }
+            });
         });
-    });
+    }
 
-    $('#locationForm').on('submit', function(e) {
-        e.preventDefault();
-        $.ajax({
-            url: '{% url "add_location" %}',
-            type: 'POST',
-            data: $(this).serialize(),
-            success: function(response) {
-                var newOption = new Option(response.name, response.id, true, true);
-                $('#{{ form.location.id_for_label }}').append(newOption).trigger('change');
-                $('#locationModal').modal('hide');
-            }
-        });
-    });
-
-    $('#roomNumberForm').on('submit', function(e) {
-        e.preventDefault();
-        $.ajax({
-            url: '{% url "add_room_number" %}',
-            type: 'POST',
-            data: $(this).serialize(),
-            success: function(response) {
-                var newOption = new Option(response.number, response.id, true, true);
-                $('#{{ form.room_number.id_for_label }}').append(newOption).trigger('change');
-                $('#roomNumberModal').modal('hide');
-            }
-        });
-    });
-
-    $('#departmentForm').on('submit', function(e) {
-        e.preventDefault();
-        $.ajax({
-            url: '{% url "add_department" %}',
-            type: 'POST',
-            data: $(this).serialize(),
-            success: function(response) {
-                var newOption = new Option(response.name, response.id, true, true);
-                $('#{{ form.department.id_for_label }}').append(newOption).trigger('change');
-                $('#departmentModal').modal('hide');
-            }
-        });
-    });
+    handleFormSubmission('#assetTypeForm', '{% url "add_asset_type" %}', '#{{ form.asset_type.id_for_label }}', '#assetTypeError');
+    handleFormSubmission('#locationForm', '{% url "add_location" %}', '#{{ form.location.id_for_label }}', '#locationError');
+    handleFormSubmission('#roomNumberForm', '{% url "add_room_number" %}', '#{{ form.room_number.id_for_label }}', '#roomNumberError');
+    handleFormSubmission('#departmentForm', '{% url "add_department" %}', '#{{ form.department.id_for_label }}', '#departmentError');
 });
 </script>
 {% endblock %}

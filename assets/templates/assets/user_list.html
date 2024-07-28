@@ -1,79 +1,35 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
+{% load static %}
 
-{% block title %}User List{% endblock %}
-
-{% block content %}
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.10.24/css/dataTables.bootstrap4.min.css">
+<link rel="stylesheet" href="https://cdn.datatables.net/buttons/1.7.0/css/buttons.dataTables.min.css">
 <style>
-    body {
-        font-family: Arial, sans-serif;
+    .filter-form {
+        margin-bottom: 20px;
+        display: flex;
+        flex-wrap: wrap;
     }
-
-    h1 {
-        color: #e84253;
+    .filter-form .form-group {
+        margin-right: 10px;
+        margin-bottom: 10px;
     }
-
-    .btn-primary, .btn-success, .btn-outline-secondary {
-        background-color: #d73a4b;
-        border-color: hsl(354, 81%, 61%);
-        color: #ffffff;
+    .dt-buttons {
+        margin-bottom: 15px;
     }
-
-    .btn-primary:hover, .btn-success:hover, .btn-outline-secondary:hover {
-        background-color: #d73a4b;
-        border-color: #d73a4b;
-    }
-
-    .btn-danger {
-        background-color: #000000;
-        border-color: #000000;
-        color: #ffffff;
-    }
-
-    .btn-danger:hover {
-        background-color: #333333;
-        border-color: #333333;
-    }
-
-    .table th {
-        background-color: #e84253;
-        color: #ffffff;
-    }
-
-    .table td, .table th {
-        border: 1px solid #000000;
-    }
-
-    .input-group .form-control {
-        border: 1px solid #e84253;
-    }
-
-    .input-group .btn {
-        color: #ffffff;
-    }
-
-    .mb-4, .mb-3 {
-        margin-bottom: 1rem !important;
-    }
-
-    .text-muted {
-        color: #6c757d !important;
+    table.dataTable tbody tr:hover {
+        background-color: #f2f2f2;
     }
 </style>
+{% endblock %}
 
-<h1>User List</h1>
+{% block content %}
+<h2>User List</h2>
 
 {% if is_staff %}
-    <div class="mb-4">
-        <h2>Import Users from CSV</h2>
-        <form method="post" action="{% url 'import_users_csv' %}" enctype="multipart/form-data">
-            {% csrf_token %}
-            {{ upload_form.as_p }}
-            <button type="submit" class="btn btn-primary">Import Users</button>
-        </form>
-        <small class="text-muted">CSV should have 'name' and 'email' columns.</small>
-    </div>
-
+<div class="mb-3">
     <a href="{% url 'user_create' %}" class="btn btn-success mb-3">Add New User</a>
+</div>
 {% endif %}
 
 <form method="get" class="mb-3">
@@ -83,7 +39,7 @@
     </div>
 </form>
 
-<table class="table">
+<table id="userTable" class="table table-striped table-bordered">
     <thead>
         <tr>
             <th>Name</th>
@@ -107,9 +63,64 @@
         </tr>
     {% empty %}
         <tr>
-            <td colspan="{% if is_staff %}3{% else %}2{% endif %}">No users found.</td>
+            <td colspan="{% if is_staff %}3{% else %}2{% endif %}" class="text-center">No users found.</td>
         </tr>
     {% endfor %}
     </tbody>
 </table>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.datatables.net/1.10.24/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.10.24/js/dataTables.bootstrap4.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/1.7.0/js/dataTables.buttons.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/pdfmake.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/vfs_fonts.js"></script>
+<script src="https://cdn.datatables.net/buttons/1.7.0/js/buttons.html5.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/1.7.0/js/buttons.print.min.js"></script>
+<script>
+$(document).ready(function() {
+    var table = $('#userTable').DataTable({
+        "pageLength": 25,
+        "language": {
+            "search": "Quick Search:"
+        },
+        dom: 'Bfrtip',
+        buttons: [
+            'copy',
+            'excel',
+            {
+                extend: 'pdfHtml5',
+                orientation: 'portrait',
+                pageSize: 'A4',
+                customize: function(doc) {
+                    doc.defaultStyle.fontSize = 10;
+                    doc.styles.tableHeader.fontSize = 12;
+                },
+                exportOptions: {
+                    columns: ':not(:last-child)'
+                }
+            },
+            {
+                extend: 'print',
+                exportOptions: {
+                    columns: ':not(:last-child)'
+                }
+            }
+        ]
+    });
+
+    // Real-time search
+    var searchTimeout;
+    $('.dataTables_filter input').unbind().bind('input', function() {
+        var self = this;
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(function() {
+            table.search(self.value).draw();
+        }, 300);
+    });
+});
+</script>
 {% endblock %}

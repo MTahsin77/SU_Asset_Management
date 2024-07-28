@@ -35,12 +35,12 @@
     }
 
     .btn-edit {
-        background-color: #000000;
+        background-color: #d73a4b;
         color: #ffffff;
     }
 
     .btn-edit:hover {
-        background-color: #333333;
+        background-color: #d45858;
     }
 
     .btn-deallocate, .btn-allocate {
@@ -51,26 +51,51 @@
     .btn-deallocate:hover, .btn-allocate:hover {
         background-color: #d73a4b;
     }
+
+    .asset-info {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+
+    .asset-info h2 {
+        color: #e84253;
+        margin-bottom: 15px;
+    }
 </style>
 
 <h1>Asset Detail</h1>
-<p>Type: {{ asset.asset_type }}</p>
-<p>Number: {{ asset.asset_number }}</p>
-<p>Location: {{ asset.location }}</p>
-<p>Room Number: {{ asset.room_number }}</p>
-<p>Purchase Date: {{ asset.purchase_date }}</p>
-<p>Depreciation Date: {{ asset.depreciation_date }}</p>
-<p>Status: {% if asset.is_allocated %}Allocated{% else %}Available{% endif %}</p>
 
-{% if asset.is_allocated %}
-    {% with current_allocation=asset.allocation_set.latest('assigned_date') %}
-        <p>Allocated to: {{ current_allocation.user }}</p>
-        <p>Assigned Date: {{ current_allocation.assigned_date }}</p>
-        <a href="{% url 'deallocate_asset' current_allocation.pk %}" class="btn btn-deallocate">Deallocate</a>
-    {% endwith %}
-{% else %}
-    <a href="{% url 'allocate_asset' %}?asset={{ asset.pk }}" class="btn btn-allocate">Allocate</a>
-{% endif %}
+<div class="asset-info">
+    <h2>General Information</h2>
+    <p><strong>Type:</strong> {{ asset.asset_type }}</p>
+    <p><strong>Number:</strong> {{ asset.asset_number }}</p>
+    <p><strong>Department:</strong> {{ asset.department }}</p>
+    <p><strong>Location:</strong> {{ asset.location }}</p>
+    <p><strong>Room Number:</strong> {{ asset.room_number }}</p>
+</div>
 
-<a href="{% url 'asset_update' asset.pk %}" class="btn btn-edit">Edit Asset</a>
+<div class="asset-info">
+    <h2>Financial Information</h2>
+    <p><strong>Purchase Date:</strong> {{ asset.purchase_date }}</p>
+    <p><strong>Purchase Value:</strong> £{{ asset.purchase_value|floatformat:2 }}</p>
+    <p><strong>Current Value:</strong> £{{ asset.current_value|floatformat:2 }}</p>
+    <p><strong>Depreciation Date:</strong> {{ asset.depreciation_date }}</p>
+</div>
+
+<div class="asset-info">
+    <h2>Status</h2>
+    <p><strong>Allocation Status:</strong> {% if asset.is_allocated %}Allocated{% else %}Available{% endif %}</p>
+    <p><strong>Sticker Deployed:</strong> {% if asset.sticker_deployed %}Yes{% else %}No{% endif %}</p>
+
+    <p><strong>Allocated to:</strong> {{ current_allocation.user }}</p>
+    <p><strong>Assigned Date:</strong> {{ current_allocation.assigned_date }}</p>
+    {% if user.is_staff %}
+    <a href="{% url 'asset_update' asset.pk %}" class="btn btn-edit">Edit Asset</a>
+    {% endif %}
+</div>
+
+
 {% endblock %}

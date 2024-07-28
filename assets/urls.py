@@ -1,9 +1,9 @@
 from django.urls import path, include
 from . import views
 from .views import AssetAllocationChart
-from .views import admin_login
-from django.contrib.auth.views import LogoutView
 from rest_framework.routers import DefaultRouter
+from django.contrib.auth.views import LogoutView
+from django.contrib.auth import views as auth_views
 
 router = DefaultRouter()
 router.register(r'assets', views.AssetViewSet)
@@ -12,11 +12,14 @@ router.register(r'locations', views.LocationViewSet)
 router.register(r'room-numbers', views.RoomNumberViewSet)
 router.register(r'users', views.UserViewSet)
 
-
 urlpatterns = [
     path('', views.dashboard, name='dashboard'),
+    path('assets/<int:pk>/delete/', views.asset_delete, name='asset_delete'),
+    path('users/<int:pk>/delete/', views.user_delete, name='user_delete'),
+    path('export-assets/', views.export_assets, name='export_assets'),
     path('add-department/', views.add_department, name='add_department'),
     path('assets/', views.asset_list, name='asset_list'),
+    path('import-assets/', views.import_assets, name='import_assets'),
     path('assets/<int:pk>/', views.asset_detail, name='asset_detail'),
     path('assets/create/', views.asset_create, name='asset_create'),
     path('assets/<int:pk>/update/', views.asset_update, name='asset_update'),
@@ -29,8 +32,8 @@ urlpatterns = [
     path('chart/asset-allocation/', AssetAllocationChart.as_view(), name='asset_allocation_chart'),
     path('deallocate/<int:pk>/', views.deallocate_asset, name='deallocate_asset'),
     path('allocations/', views.allocation_list, name='allocation_list'),
-    path('admin-login/', admin_login, name='admin_login'),
-    path('logout/', LogoutView.as_view(), name='logout'),
+    path('admin-login/', views.admin_login, name='admin_login'),
+    path('logout/', auth_views.LogoutView.as_view(next_page='dashboard'), name='logout'),
     path('api/', include(router.urls)),
     path('assets/<int:pk>/delete/', views.asset_delete, name='asset_delete'),
     path('users/<int:pk>/delete/', views.user_delete, name='user_delete'),
