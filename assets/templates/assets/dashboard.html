@@ -95,10 +95,23 @@
         </div>
     </div>
 </div>
+
+<!-- Add these script tags to embed the data -->
+<script id="asset-types-data" type="application/json">
+    {{ asset_types_json|safe }}
+</script>
+<script id="value-over-time-data" type="application/json">
+    {{ value_over_time_json|safe }}
+</script>
+<script id="top-departments-data" type="application/json">
+    {{ top_departments_json|safe }}
+</script>
+<script id="depreciation-data" type="application/json">
+    {{ depreciation_data|safe }}
+</script>
 {% endblock %}
 
 {% block extra_scripts %}
-
 <script>
     // Retrieve data from embedded scripts
     const assetTypeData = JSON.parse(document.getElementById('asset-types-data').textContent);
@@ -194,5 +207,4 @@
         }
     });
 </script>
-
 {% endblock %}

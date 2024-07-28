@@ -195,7 +195,7 @@ LOGOUT_REDIRECT_URL = '/'
     <link rel="stylesheet" href="{% static 'css/suams-styles.css' %}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SUAMS - {% block title %}{% endblock %}</title>
+    <title>SUAMS{% block title %}{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     {% block extra_head %}{% endblock %}
@@ -222,7 +222,10 @@ LOGOUT_REDIRECT_URL = '/'
                 <ul class="navbar-nav ms-auto">
                     {% if user.is_authenticated and user.is_staff %}
                         <li class="nav-item">
-                            <a class="nav-link" href="{% url 'logout' %}">Logout (Admin)</a>
+                            <form method="post" action="{% url 'logout' %}" class="logout-form">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-link nav-link">Logout (Admin)</button>
+                            </form>
                         </li>
                     {% else %}
                         <li class="nav-item">
@@ -256,6 +259,8 @@ from django.urls import path, include
 from . import views
 from .views import AssetAllocationChart
 from rest_framework.routers import DefaultRouter
+from django.contrib.auth.views import LogoutView
+from django.contrib.auth import views as auth_views
 
 router = DefaultRouter()
 router.register(r'assets', views.AssetViewSet)
@@ -266,6 +271,8 @@ router.register(r'users', views.UserViewSet)
 
 urlpatterns = [
     path('', views.dashboard, name='dashboard'),
+    path('assets/<int:pk>/delete/', views.asset_delete, name='asset_delete'),
+    path('users/<int:pk>/delete/', views.user_delete, name='user_delete'),
     path('export-assets/', views.export_assets, name='export_assets'),
     path('add-department/', views.add_department, name='add_department'),
     path('assets/', views.asset_list, name='asset_list'),
@@ -283,7 +290,7 @@ urlpatterns = [
     path('deallocate/<int:pk>/', views.deallocate_asset, name='deallocate_asset'),
     path('allocations/', views.allocation_list, name='allocation_list'),
     path('admin-login/', views.admin_login, name='admin_login'),
-    path('logout/', views.LogoutView.as_view(), name='logout'),
+    path('logout/', auth_views.LogoutView.as_view(next_page='dashboard'), name='logout'),
     path('api/', include(router.urls)),
     path('assets/<int:pk>/delete/', views.asset_delete, name='asset_delete'),
     path('users/<int:pk>/delete/', views.user_delete, name='user_delete'),
@@ -297,6 +304,7 @@ urlpatterns = [
 
 import csv
 import io
+import json
 from django.core.management import call_command
 from django.contrib.auth.views import LogoutView
 from django.views.decorators.http import require_http_methods
@@ -309,8 +317,10 @@ from .models import User
 from django.db import IntegrityError
 from .forms import CSVUploadForm
 from django.utils import timezone
+from django.core.serializers.json import DjangoJSONEncoder
 from django.shortcuts import render, get_object_or_404, redirect
-from django.db.models import Q, Count
+from django.db import models
+from django.db.models import Q, Count, Sum
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib import messages
@@ -320,7 +330,7 @@ from rest_framework import viewsets
 from .serializers import AssetSerializer, AssetTypeSerializer, LocationSerializer, RoomNumberSerializer, UserSerializer
 from .models import Asset, AssetType, Location, RoomNumber, User, Department, Allocation
 from chartjs.views.lines import BaseLineChartView
-from .models import Asset, User, Allocation, AssetType, Location, RoomNumber
+from .models import Asset, User, Allocation, AssetType, Location, RoomNumber, Department
 from .forms import AssetForm, UserForm, AllocationForm, DeallocationForm, AssetTypeForm, LocationForm, RoomNumberForm, DepartmentForm
 
 class AssetAllocationChart(BaseLineChartView):
@@ -341,22 +351,65 @@ class AssetAllocationChart(BaseLineChartView):
         ]
 
 def dashboard(request):
-    asset_count = Asset.objects.count()
-    user_count = User.objects.count()
-    allocation_count = Allocation.objects.count()
-    recent_allocations = Allocation.objects.order_by('-assigned_date')[:5]
+    # Asset counts
+    total_assets = Asset.objects.count()
+    allocated_assets = Asset.objects.filter(assigned_to__isnull=False).count()
+    unallocated_assets = total_assets - allocated_assets
+
+    # Asset allocation by type
+    asset_types = AssetType.objects.annotate(
+        total=Count('asset'),
+        allocated=Count('asset', filter=models.Q(asset__assigned_to__isnull=False))
+    )
+
+    # Asset value over time
+    now = timezone.now()
+    years = 5
+    value_over_time = []
+    for i in range(years):
+        date = now - timedelta(days=365 * i)
+        total_value = Asset.objects.filter(purchase_date__lte=date).aggregate(
+            total=Sum('current_value'))['total'] or 0
+        value_over_time.append({'date': date.strftime('%Y-%m-%d'), 'value': total_value})
     
-    asset_types = Asset.objects.values('asset_type').annotate(count=Count('asset_type'))
-    
+    # Top departments by asset count
+    top_departments = Department.objects.annotate(
+        asset_count=Count('asset')).order_by('-asset_count')[:5]
+
+    # Recent acquisitions
+    recent_acquisitions = Asset.objects.order_by('-purchase_date')[:10]
+
+    # Depreciation summary
+    total_purchase_value = Asset.objects.aggregate(total=Sum('purchase_value'))['total'] or 0
+    total_current_value = Asset.objects.aggregate(total=Sum('current_value'))['total'] or 0
+    total_depreciation = total_purchase_value - total_current_value
+
+    # Prepare JSON data
+    asset_types_json = list(asset_types.values('name', 'total', 'allocated'))
+    value_over_time_json = value_over_time
+    top_departments_json = list(top_departments.values('name', 'asset_count'))
+    depreciation_data = {
+        'currentValue': float(total_current_value),
+        'depreciation': float(total_depreciation)
+    }
     context = {
-        'asset_count': asset_count,
-        'user_count': user_count,
-        'allocation_count': allocation_count,
-        'recent_allocations': recent_allocations,
+        'total_assets': total_assets,
+        'allocated_assets': allocated_assets,
+        'unallocated_assets': unallocated_assets,
         'asset_types': asset_types,
+        'value_over_time': value_over_time,
+        'top_departments': top_departments,
+        'recent_acquisitions': recent_acquisitions,
+        'total_purchase_value': total_purchase_value,
+        'total_current_value': total_current_value,
+        'total_depreciation': total_depreciation,
+        'asset_types_json': asset_types_json,
+        'value_over_time_json': value_over_time_json,
+        'top_departments_json': top_departments_json,
+        'total_current_value': total_current_value,
+        'total_depreciation': total_depreciation,
     }
     return render(request, 'assets/dashboard.html', context)
-
 def admin_login(request):
     if request.method == 'POST':
         username = request.POST['username']
@@ -371,8 +424,15 @@ def admin_login(request):
 
 def asset_list(request):
     assets = Asset.objects.all()
+    asset_types = AssetType.objects.all()
     locations = Location.objects.all()
     departments = Department.objects.all()
+    users = User.objects.all()
+
+    # Filter by asset type
+    asset_type_id = request.GET.get('asset_type')
+    if asset_type_id:
+        assets = assets.filter(asset_type_id=asset_type_id)
 
     # Filter by location
     location_id = request.GET.get('location')
@@ -384,22 +444,34 @@ def asset_list(request):
     if department_id:
         assets = assets.filter(department_id=department_id)
 
+    # Filter by allocated user
+    user_id = request.GET.get('allocated_to')
+    if user_id:
+        if user_id == 'unallocated':
+            assets = assets.filter(assigned_to__isnull=True)
+        else:
+            assets = assets.filter(assigned_to_id=user_id)
+
     # Search functionality
     search_query = request.GET.get('search', '')
     if search_query:
         assets = assets.filter(
             Q(asset_number__icontains=search_query) |
-            Q(model__icontains=search_query) |
+            Q(asset_type__name__icontains=search_query) |
             Q(assigned_to__name__icontains=search_query)
         )
 
     context = {
         'assets': assets,
+        'asset_types': asset_types,
         'locations': locations,
         'departments': departments,
+        'users': users,
         'search_query': search_query,
+        'selected_asset_type': asset_type_id,
         'selected_location': location_id,
         'selected_department': department_id,
+        'selected_user': user_id,
     }
     return render(request, 'assets/asset_list.html', context)
 
@@ -505,7 +577,7 @@ def import_assets(request):
     return redirect('asset_list')
 
 
-@login_required
+
 def asset_detail(request, pk):
     asset = get_object_or_404(Asset, pk=pk)
     return render(request, 'assets/asset_detail.html', {'asset': asset})
@@ -623,8 +695,12 @@ def import_users_csv(request):
 
 def user_detail(request, pk):
     user = get_object_or_404(User, pk=pk)
-    allocations = Allocation.objects.filter(user=user, return_date__isnull=True).select_related('asset')
-    return render(request, 'assets/user_detail.html', {'user': user, 'allocations': allocations})
+    allocated_assets = Asset.objects.filter(assigned_to=user)
+    context = {
+        'user': user,
+        'assets': allocated_assets,
+    }
+    return render(request, 'assets/user_detail.html', context)
 
 @staff_member_required
 def user_create(request):
@@ -969,6 +1045,19 @@ class AssetSerializer(serializers.ModelSerializer):
         fields = ['id', 'asset_type', 'asset_number', 'location', 'room_number', 
                   'purchase_date', 'depreciation_date', 'is_allocated', 'assigned_to']
 
+<!-- File: /home/m-tahsin/Desktop/Development/SU Asset Management/assets/custom_filters.py -->
+
+from django import template
+from django.template.defaultfilters import floatformat
+
+register = template.Library()
+
+@register.filter(name='currency_gbp')
+def currency_gbp(value):
+    if value is None:
+        return "£0.00"
+    return f"£{floatformat(value, 2)}"
+
 <!-- File: /home/m-tahsin/Desktop/Development/SU Asset Management/assets/templates/assets/allocation_form.html -->
 
 {% extends "base.html" %}
@@ -984,11 +1073,30 @@ class AssetSerializer(serializers.ModelSerializer):
 </form>
 {% endblock %}
 
-<!-- File: /home/m-tahsin/Desktop/Development/SU Asset Management/assets/templates/assets/user_detail.html -->
+<!-- File: /home/m-tahsin/Desktop/Development/SU Asset Management/assets/templates/assets/asset_confirm_delete.html -->
 
 {% extends "base.html" %}
 
+{% block content %}
+<h1>Confirm Delete</h1>
+<p>Are you sure you want to delete the asset: {{ asset }}?</p>
+<form method="post">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-danger">Confirm Delete</button>
+    <a href="{% url 'asset_list' %}" class="btn btn-secondary">Cancel</a>
+</form>
+{% endblock %}
+
+<!-- File: /home/m-tahsin/Desktop/Development/SU Asset Management/assets/templates/assets/user_detail.html -->
+
+{% extends "base.html" %}
+{% load static %}
+
 {% block title %}User Detail - {{ user.name }}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.10.24/css/dataTables.bootstrap4.min.css">
+{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
@@ -1001,114 +1109,117 @@ class AssetSerializer(serializers.ModelSerializer):
     </div>
 
     <h2>Allocated Assets</h2>
-    {% if allocations %}
-        <table class="table table-striped">
-            <thead>
-                <tr>
-                    <th>Asset Type</th>
-                    <th>Asset Number</th>
-                    <th>Model</th>
-                    <th>Assigned Date</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for allocation in allocations %}
-                <tr>
-                    <td>{{ allocation.asset.asset_type }}</td>
-                    <td>{{ allocation.asset.asset_number }}</td>
-                    <td>{{ allocation.asset.model }}</td>
-                    <td>{{ allocation.assigned_date }}</td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    {% else %}
-        <p>No assets currently allocated to this user.</p>
-    {% endif %}
+    <table id="assetTable" class="table table-striped table-bordered">
+        <thead>
+            <tr>
+                <th>Asset Type</th>
+                <th>Asset Number</th>
+                <th>Department</th>
+                <th>Location</th>
+                <th>Room Number</th>
+                <th>Purchase Date</th>
+                <th>Purchase Value</th>
+                <th>Current Value</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for asset in assets %}
+            <tr>
+                <td>{{ asset.asset_type.name }}</td>
+                <td><a href="{% url 'asset_detail' asset.pk %}">{{ asset.asset_number }}</a></td>
+                <td>{{ asset.department.name }}</td>
+                <td>{{ asset.location.name }}</td>
+                <td>{{ asset.room_number.number }}</td>
+                <td>{{ asset.purchase_date }}</td>
+                <td>{{ asset.purchase_value }}</td>
+                <td>{{ asset.current_value }}</td>
+                <td>
+                    <a href="{% url 'asset_detail' asset.pk %}" class="btn btn-sm btn-info">View</a>
+                    {% if user.is_staff %}
+                    <a href="{% url 'asset_update' asset.pk %}" class="btn btn-sm btn-warning">Edit</a>
+                    <a href="{% url 'asset_delete' asset.pk %}" class="btn btn-sm btn-danger">Delete</a>
+                    {% endif %}
+                </td>
+            </tr>
+        {% empty %}
+            <tr>
+                <td colspan="9">No assets currently allocated to this user.</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
 
     <a href="{% url 'user_update' user.pk %}" class="btn btn-primary">Edit User</a>
     <a href="{% url 'user_list' %}" class="btn btn-secondary">Back to User List</a>
 </div>
 {% endblock %}
 
-<!-- File: /home/m-tahsin/Desktop/Development/SU Asset Management/assets/templates/assets/user_list.html -->
+{% block extra_scripts %}
+<script src="https://cdn.datatables.net/1.10.24/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.10.24/js/dataTables.bootstrap4.min.js"></script>
+<script>
+$(document).ready(function() {
+    $('#assetTable').DataTable({
+        "pageLength": 10,
+        "lengthChange": false,
+        "searching": false,
+        "language": {
+            "emptyTable": "No assets currently allocated to this user."
+        }
+    });
+});
+</script>
+{% endblock %}
+
+<!-- File: /home/m-tahsin/Desktop/Development/SU Asset Management/assets/templates/assets/user_confirm_delete.html -->
 
 {% extends "base.html" %}
 
-{% block title %}User List{% endblock %}
-
 {% block content %}
+<h1>Confirm Delete</h1>
+<p>Are you sure you want to delete the user: {{ user }}?</p>
+<form method="post">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-danger">Confirm Delete</button>
+    <a href="{% url 'user_list' %}" class="btn btn-secondary">Cancel</a>
+</form>
+{% endblock %}
+
+<!-- File: /home/m-tahsin/Desktop/Development/SU Asset Management/assets/templates/assets/user_list.html -->
+
+{% extends 'base.html' %}
+{% load static %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.10.24/css/dataTables.bootstrap4.min.css">
+<link rel="stylesheet" href="https://cdn.datatables.net/buttons/1.7.0/css/buttons.dataTables.min.css">
 <style>
-    body {
-        font-family: Arial, sans-serif;
+    .filter-form {
+        margin-bottom: 20px;
+        display: flex;
+        flex-wrap: wrap;
     }
-
-    h1 {
-        color: #e84253;
+    .filter-form .form-group {
+        margin-right: 10px;
+        margin-bottom: 10px;
     }
-
-    .btn-primary, .btn-success, .btn-outline-secondary {
-        background-color: #d73a4b;
-        border-color: hsl(354, 81%, 61%);
-        color: #ffffff;
+    .dt-buttons {
+        margin-bottom: 15px;
     }
-
-    .btn-primary:hover, .btn-success:hover, .btn-outline-secondary:hover {
-        background-color: #d73a4b;
-        border-color: #d73a4b;
-    }
-
-    .btn-danger {
-        background-color: #000000;
-        border-color: #000000;
-        color: #ffffff;
-    }
-
-    .btn-danger:hover {
-        background-color: #333333;
-        border-color: #333333;
-    }
-
-    .table th {
-        background-color: #e84253;
-        color: #ffffff;
-    }
-
-    .table td, .table th {
-        border: 1px solid #000000;
-    }
-
-    .input-group .form-control {
-        border: 1px solid #e84253;
-    }
-
-    .input-group .btn {
-        color: #ffffff;
-    }
-
-    .mb-4, .mb-3 {
-        margin-bottom: 1rem !important;
-    }
-
-    .text-muted {
-        color: #6c757d !important;
+    table.dataTable tbody tr:hover {
+        background-color: #f2f2f2;
     }
 </style>
+{% endblock %}
 
-<h1>User List</h1>
+{% block content %}
+<h2>User List</h2>
 
 {% if is_staff %}
-    <div class="mb-4">
-        <h2>Import Users from CSV</h2>
-        <form method="post" action="{% url 'import_users_csv' %}" enctype="multipart/form-data">
-            {% csrf_token %}
-            {{ upload_form.as_p }}
-            <button type="submit" class="btn btn-primary">Import Users</button>
-        </form>
-        <small class="text-muted">CSV should have 'name' and 'email' columns.</small>
-    </div>
-
+<div class="mb-3">
     <a href="{% url 'user_create' %}" class="btn btn-success mb-3">Add New User</a>
+</div>
 {% endif %}
 
 <form method="get" class="mb-3">
@@ -1118,7 +1229,7 @@ class AssetSerializer(serializers.ModelSerializer):
     </div>
 </form>
 
-<table class="table">
+<table id="userTable" class="table table-striped table-bordered">
     <thead>
         <tr>
             <th>Name</th>
@@ -1142,11 +1253,66 @@ class AssetSerializer(serializers.ModelSerializer):
         </tr>
     {% empty %}
         <tr>
-            <td colspan="{% if is_staff %}3{% else %}2{% endif %}">No users found.</td>
+            <td colspan="{% if is_staff %}3{% else %}2{% endif %}" class="text-center">No users found.</td>
         </tr>
     {% endfor %}
     </tbody>
 </table>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.datatables.net/1.10.24/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.10.24/js/dataTables.bootstrap4.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/1.7.0/js/dataTables.buttons.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/pdfmake.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/vfs_fonts.js"></script>
+<script src="https://cdn.datatables.net/buttons/1.7.0/js/buttons.html5.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/1.7.0/js/buttons.print.min.js"></script>
+<script>
+$(document).ready(function() {
+    var table = $('#userTable').DataTable({
+        "pageLength": 25,
+        "language": {
+            "search": "Quick Search:"
+        },
+        dom: 'Bfrtip',
+        buttons: [
+            'copy',
+            'excel',
+            {
+                extend: 'pdfHtml5',
+                orientation: 'portrait',
+                pageSize: 'A4',
+                customize: function(doc) {
+                    doc.defaultStyle.fontSize = 10;
+                    doc.styles.tableHeader.fontSize = 12;
+                },
+                exportOptions: {
+                    columns: ':not(:last-child)'
+                }
+            },
+            {
+                extend: 'print',
+                exportOptions: {
+                    columns: ':not(:last-child)'
+                }
+            }
+        ]
+    });
+
+    // Real-time search
+    var searchTimeout;
+    $('.dataTables_filter input').unbind().bind('input', function() {
+        var self = this;
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(function() {
+            table.search(self.value).draw();
+        }, 300);
+    });
+});
+</script>
 {% endblock %}
 
 
@@ -1189,12 +1355,12 @@ class AssetSerializer(serializers.ModelSerializer):
     }
 
     .btn-edit {
-        background-color: #000000;
+        background-color: #d73a4b;
         color: #ffffff;
     }
 
     .btn-edit:hover {
-        background-color: #333333;
+        background-color: #d45858;
     }
 
     .btn-deallocate, .btn-allocate {
@@ -1226,7 +1392,6 @@ class AssetSerializer(serializers.ModelSerializer):
     <h2>General Information</h2>
     <p><strong>Type:</strong> {{ asset.asset_type }}</p>
     <p><strong>Number:</strong> {{ asset.asset_number }}</p>
-    <p><strong>Model:</strong> {{ asset.model }}</p>
     <p><strong>Department:</strong> {{ asset.department }}</p>
     <p><strong>Location:</strong> {{ asset.location }}</p>
     <p><strong>Room Number:</strong> {{ asset.room_number }}</p>
@@ -1235,8 +1400,8 @@ class AssetSerializer(serializers.ModelSerializer):
 <div class="asset-info">
     <h2>Financial Information</h2>
     <p><strong>Purchase Date:</strong> {{ asset.purchase_date }}</p>
-    <p><strong>Purchase Value:</strong> ${{ asset.purchase_value|floatformat:2 }}</p>
-    <p><strong>Current Value:</strong> ${{ asset.current_value|floatformat:2 }}</p>
+    <p><strong>Purchase Value:</strong> £{{ asset.purchase_value|floatformat:2 }}</p>
+    <p><strong>Current Value:</strong> £{{ asset.current_value|floatformat:2 }}</p>
     <p><strong>Depreciation Date:</strong> {{ asset.depreciation_date }}</p>
 </div>
 
@@ -1245,38 +1410,14 @@ class AssetSerializer(serializers.ModelSerializer):
     <p><strong>Allocation Status:</strong> {% if asset.is_allocated %}Allocated{% else %}Available{% endif %}</p>
     <p><strong>Sticker Deployed:</strong> {% if asset.sticker_deployed %}Yes{% else %}No{% endif %}</p>
 
-    {% if asset.is_allocated and current_allocation %}
-        <p><strong>Allocated to:</strong> {{ current_allocation.user }}</p>
-        <p><strong>Assigned Date:</strong> {{ current_allocation.assigned_date }}</p>
-        <a href="{% url 'deallocate_asset' current_allocation.pk %}" class="btn btn-deallocate">Deallocate</a>
-    {% else %}
-        <a href="{% url 'allocate_asset' %}?asset={{ asset.pk }}" class="btn btn-allocate">Allocate</a>
+    <p><strong>Allocated to:</strong> {{ current_allocation.user }}</p>
+    <p><strong>Assigned Date:</strong> {{ current_allocation.assigned_date }}</p>
+    {% if user.is_staff %}
+    <a href="{% url 'asset_update' asset.pk %}" class="btn btn-edit">Edit Asset</a>
     {% endif %}
 </div>
 
-<a href="{% url 'asset_update' asset.pk %}" class="btn btn-edit">Edit Asset</a>
-{% endblock %}
 
-<!-- File: /home/m-tahsin/Desktop/Development/SU Asset Management/assets/templates/assets/allocation_list.html -->
-
-{% extends "base.html" %}
-
-{% block title %}Current Allocations{% endblock %}
-
-{% block content %}
-<h1>Current Allocations</h1>
-<a href="{% url 'allocate_asset' %}">Allocate New Asset</a>
-<ul>
-{% for allocation in allocations %}
-    <li>
-        {{ allocation.asset }} allocated to {{ allocation.user }} 
-        (Assigned on: {{ allocation.assigned_date }})
-        <a href="{% url 'deallocate_asset' allocation.pk %}">Deallocate</a>
-    </li>
-{% empty %}
-    <li>No current allocations.</li>
-{% endfor %}
-</ul>
 {% endblock %}
 
 <!-- File: /home/m-tahsin/Desktop/Development/SU Asset Management/assets/templates/assets/asset_list.html -->
@@ -1290,15 +1431,31 @@ class AssetSerializer(serializers.ModelSerializer):
 <style>
     .filter-form {
         margin-bottom: 20px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
     }
     .filter-form .form-group {
         margin-right: 10px;
+        margin-bottom: 10px;
+    }
+    .filter-form label {
+        margin-right: 5px;
     }
     #importForm {
         display: inline;
     }
     .dt-buttons {
         margin-bottom: 15px;
+    }
+    .filter-buttons {
+        margin-top: 10px;
+    }
+    .filter-buttons .btn {
+        margin-right: 10px;
+    }
+    table.dataTable tbody tr:hover {
+        background-color: #f2f2f2;
     }
 </style>
 {% endblock %}
@@ -1307,63 +1464,67 @@ class AssetSerializer(serializers.ModelSerializer):
 <h2>Asset List</h2>
 
 <div class="filter-form">
-    <form id="assetFilterForm" class="form-inline">
-        <div class="form-group">
-            <label for="assetType">Asset:</label>
-            <select id="assetType" class="form-control">
-                <option value="">All</option>
-                {% for type in asset_types %}
-                    <option value="{{ type.id }}">{{ type.name }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="form-group">
-            <label for="location">Location:</label>
-            <select id="location" class="form-control">
-                <option value="">All</option>
-                {% for loc in locations %}
-                    <option value="{{ loc.id }}">{{ loc.name }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="form-group">
-            <label for="department">Department:</label>
-            <select id="department" class="form-control">
-                <option value="">All</option>
-                {% for dept in departments %}
-                    <option value="{{ dept.id }}">{{ dept.name }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="form-group">
-            <label for="allocatedTo">Allocated To:</label>
-            <select id="allocatedTo" class="form-control">
-                <option value="">All</option>
-                <option value="unallocated">Unallocated</option>
-                {% for user in users %}
-                    <option value="{{ user.id }}">{{ user.name }}</option>
-                {% endfor %}
-            </select>
-        </div>
-    </form>
+    <div class="form-group">
+        <label for="assetType">Asset Type:</label>
+        <select id="assetType" name="asset_type" class="form-control">
+            <option value="">All</option>
+            {% for asset_type in asset_types %}
+                <option value="{{ asset_type.id }}" {% if selected_asset_type == asset_type.id|stringformat:"s" %}selected{% endif %}>{{ asset_type.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="location">Location:</label>
+        <select id="location" name="location" class="form-control">
+            <option value="">All</option>
+            {% for loc in locations %}
+                <option value="{{ loc.id }}" {% if selected_location == loc.id|stringformat:"s" %}selected{% endif %}>{{ loc.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="department">Department:</label>
+        <select id="department" name="department" class="form-control">
+            <option value="">All</option>
+            {% for dept in departments %}
+                <option value="{{ dept.id }}" {% if selected_department == dept.id|stringformat:"s" %}selected{% endif %}>{{ dept.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="allocatedTo">Allocated To:</label>
+        <select id="allocatedTo" name="allocated_to" class="form-control">
+            <option value="">All</option>
+            <option value="unallocated" {% if selected_user == 'unallocated' %}selected{% endif %}>Unallocated</option>
+            {% for user in users %}
+                <option value="{{ user.id }}" {% if selected_user == user.id|stringformat:"s" %}selected{% endif %}>{{ user.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
 </div>
 
-{% if user.is_staff %}
-<div class="mb-3">
+<div class="mb-3 d-flex justify-content-between">
+    <div>
+        <form id="importForm" action="{% url 'import_assets' %}" method="post" enctype="multipart/form-data" style="display:inline;">
+            {% csrf_token %}
+            <input type="file" name="csv_file" accept=".csv" style="display: none;" id="csvFileInput">
+            {% if user.is_staff %}<button type="button" class="btn btn-success" onclick="document.getElementById('csvFileInput').click();">Import Assets</button>{% endif %}
+        </form>
+
+        {% if user.is_staff %}
+        <a href="{% url 'export_assets' %}" class="btn btn-info">Export Assets (CSV)</a>
+        {% endif %}
+    </div>
+    {% if user.is_staff %}
     <a href="{% url 'asset_create' %}" class="btn btn-primary">Add New Asset</a>
-    <form id="importForm" action="{% url 'import_assets' %}" method="post" enctype="multipart/form-data">
-        {% csrf_token %}
-        <input type="file" name="csv_file" accept=".csv" style="display: none;" id="csvFileInput">
-        <button type="button" class="btn btn-success" onclick="document.getElementById('csvFileInput').click();">Import Assets</button>
-    </form>
-    <a href="{% url 'export_assets' %}" class="btn btn-info">Export Assets (CSV)</a>
+    {% endif %}
 </div>
-{% endif %}
+
 
 <table id="assetTable" class="table table-striped table-bordered">
     <thead>
         <tr>
-            <th>Asset</th>
+            <th>Asset Type</th>
             <th>Asset Number</th>
             <th>Department</th>
             <th>Location</th>
@@ -1379,13 +1540,13 @@ class AssetSerializer(serializers.ModelSerializer):
     {% for asset in assets %}
         <tr>
             <td>{{ asset.asset_type.name }}</td>
-            <td>{{ asset.asset_number }}</td>
+            <td><a href="{% url 'asset_detail' asset.pk %}">{{ asset.asset_number }}</a></td>
             <td>{{ asset.department.name }}</td>
             <td>{{ asset.location.name }}</td>
             <td>{{ asset.room_number.number }}</td>
             <td>{{ asset.purchase_date }}</td>
-            <td>${{ asset.purchase_value }}</td>
-            <td>${{ asset.current_value }}</td>
+            <td>£{{ asset.purchase_value }}</td>
+            <td>£{{ asset.current_value }}</td>
             <td>{% if asset.assigned_to %}{{ asset.assigned_to.name }}{% else %}Unallocated{% endif %}</td>
             <td>
                 <a href="{% url 'asset_detail' asset.pk %}" class="btn btn-sm btn-info">View</a>
@@ -1398,6 +1559,7 @@ class AssetSerializer(serializers.ModelSerializer):
     {% endfor %}
     </tbody>
 </table>
+
 {% endblock %}
 
 {% block extra_scripts %}
@@ -1431,38 +1593,32 @@ $(document).ready(function() {
                         Array(doc.content[1].table.body[0].length + 1).join('*').split('');
                 },
                 exportOptions: {
-                    columns: ':not(:last-child)'  // Exclude the Actions column
+                    columns: ':not(:last-child)'
                 }
             },
             {
                 extend: 'print',
                 exportOptions: {
-                    columns: ':not(:last-child)'  // Exclude the Actions column
+                    columns: ':not(:last-child)'
                 }
             }
         ]
     });
 
-    $('#assetFilterForm select').on('change', function() {
-        table.draw();
+    // Apply filters in real-time
+    $('.filter-form select').on('change', function() {
+        var url = new URL(window.location);
+        $('.filter-form select').each(function() {
+            var name = $(this).attr('name');
+            var value = $(this).val();
+            if (value) {
+                url.searchParams.set(name, value);
+            } else {
+                url.searchParams.delete(name);
+            }
+        });
+        window.location = url.toString();
     });
-
-    $.fn.dataTable.ext.search.push(
-        function(settings, data, dataIndex) {
-            var assetType = $('#assetType').val();
-            var location = $('#location').val();
-            var department = $('#department').val();
-            var allocatedTo = $('#allocatedTo').val();
-
-            if (assetType && assetType != data[0]) return false;
-            if (location && location != data[3]) return false;
-            if (department && department != data[2]) return false;
-            if (allocatedTo === 'unallocated' && data[8] !== 'Unallocated') return false;
-            if (allocatedTo && allocatedTo !== 'unallocated' && data[8] !== $(`#allocatedTo option[value="${allocatedTo}"]`).text()) return false;
-
-            return true;
-        }
-    );
 
     // Real-time search
     var searchTimeout;
@@ -1483,6 +1639,7 @@ $(document).ready(function() {
 });
 </script>
 {% endblock %}
+
 
 <!-- File: /home/m-tahsin/Desktop/Development/SU Asset Management/assets/templates/assets/deallocation_form.html -->
 
@@ -1524,48 +1681,54 @@ $(document).ready(function() {
     }
     .card {
         border: none;
+        border-radius: 0.5rem;
         box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
     }
     .card-header {
-        background-color: #e84253;
+        background-color: #343a40;
         color: white;
         font-weight: bold;
+        text-align: center;
+        font-size: 1.25rem;
+        border-top-left-radius: 0.5rem;
+        border-top-right-radius: 0.5rem;
     }
     .form-control, 
     .select2-container--bootstrap4 .select2-selection,
     .flatpickr-input {
         border: 1px solid #ced4da;
         border-radius: 0.25rem;
-        padding: 0.375rem 0.75rem;
-        height: calc(1.5em + 0.75rem + 2px);
+        padding: 0.5rem 0.75rem;
+        height: calc(1.5em + 1rem + 2px);
         width: 100%;
         font-size: 1rem;
         line-height: 1.5;
+        background-color: #ffffff;
     }
     .input-group .form-control {
         width: 100%;
     }
     .select2-container--bootstrap4 .select2-selection--single .select2-selection__arrow {
-        top: 4px;
+        top: 8px;
     }
     .btn-primary {
-        background-color: #e84253;
-        border-color: #e84253;
+        background-color: #007bff;
+        border-color: #007bff;
     }
     .btn-primary:hover, .btn-primary:focus {
-        background-color: #d73248;
-        border-color: #d73248;
+        background-color: #0056b3;
+        border-color: #0056b3;
     }
     .modal-header {
-        background-color: #e84253;
+        background-color: #343a40;
         color: white;
     }
     .modal-title {
         font-weight: bold;
     }
     .input-group-append .btn {
-        height: calc(1.5em + 0.75rem + 2px);
-        padding: 0.375rem 0.75rem;
+        height: calc(1.5em + 1rem + 2px);
+        padding: 0.5rem 0.75rem;
     }
     .flatpickr-input[readonly] {
         background-color: #fff;
@@ -1577,6 +1740,14 @@ $(document).ready(function() {
         color: #dc3545;
         font-size: 0.875em;
         margin-top: 0.25rem;
+    }
+    .btn-outline-secondary {
+        border-color: #007bff;
+        color: #007bff;
+    }
+    .btn-outline-secondary:hover, .btn-outline-secondary:focus {
+        background-color: #007bff;
+        color: white;
     }
 </style>
 {% endblock %}
@@ -1658,19 +1829,14 @@ $(document).ready(function() {
                         {{ form.purchase_value }}
                     </div>
                     <div class="form-group col-md-6">
-                        {{ form.model.errors }}
-                        <label for="{{ form.model.id_for_label }}">Model:</label>
-                        {{ form.model }}
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group col-md-6">
                         {{ form.assigned_to.errors }}
                         <label for="{{ form.assigned_to.id_for_label }}">Assigned To:</label>
                         {{ form.assigned_to }}
                     </div>
-                    <div class="form-group col-md-6">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group col-md-12">
                         <div class="form-check">
                             {{ form.sticker_deployed }}
                             <label class="form-check-label" for="{{ form.sticker_deployed.id_for_label }}">
@@ -1856,6 +2022,7 @@ $(document).ready(function() {
 </script>
 {% endblock %}
 
+
 <!-- File: /home/m-tahsin/Desktop/Development/SU Asset Management/assets/templates/assets/admin_login.html -->
 
 {% extends 'base.html' %}
@@ -1901,78 +2068,200 @@ $(document).ready(function() {
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Dashboard{% endblock %}
-
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    .dashboard-card {
+        margin-bottom: 20px;
+    }
+    .chart-container {
+        position: relative;
+        height: 300px;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
-<h1>Dashboard</h1>
+<div class="container mt-4">
+    <h1>Dashboard</h1>
 
-<div class="row">
-    <div class="col-md-4">
-        <h2>Asset Count: {{ asset_count }}</h2>
+    <div class="row">
+        <div class="col-md-4 dashboard-card">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Asset Overview</h5>
+                    <p>Total Assets: {{ total_assets }}</p>
+                    <p>Allocated Assets: {{ allocated_assets }}</p>
+                    <p>Unallocated Assets: {{ unallocated_assets }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-8 dashboard-card">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Asset Allocation by Type</h5>
+                    <div class="chart-container">
+                        <canvas id="assetAllocationChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-    <div class="col-md-4">
-        <h2>User Count: {{ user_count }}</h2>
-    </div>
-    <div class="col-md-4">
-        <h2>Allocation Count: {{ allocation_count }}</h2>
-    </div>
-</div>
 
-<div class="row mt-4">
-    <div class="col-md-6">
-        <h3>Asset Allocation Chart</h3>
-        <canvas id="assetAllocationChart" width="400" height="200"></canvas>
+    <div class="row">
+        <div class="col-md-6 dashboard-card">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Asset Value Over Time</h5>
+                    <div class="chart-container">
+                        <canvas id="assetValueChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 dashboard-card">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Top Departments by Asset Count</h5>
+                    <div class="chart-container">
+                        <canvas id="topDepartmentsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-    <div class="col-md-6">
-        <h3>Recent Allocations</h3>
-        <ul class="list-group">
-            {% for allocation in recent_allocations %}
-                <li class="list-group-item">{{ allocation.asset }} allocated to {{ allocation.user }} on {{ allocation.assigned_date }}</li>
-            {% empty %}
-                <li class="list-group-item">No recent allocations.</li>
-            {% endfor %}
-        </ul>
+
+    <div class="row">
+        <div class="col-md-6 dashboard-card">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Depreciation Summary</h5>
+                    <p>Total Purchase Value: £{{ total_purchase_value|floatformat:2 }}</p>
+                    <p>Total Current Value: £{{ total_current_value|floatformat:2 }}</p>
+                    <p>Total Depreciation: £{{ total_depreciation|floatformat:2 }}</p>
+                    <div class="chart-container">
+                        <canvas id="depreciationChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 dashboard-card">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Recent Acquisitions</h5>
+                    <ul class="list-group">
+                        {% for asset in recent_acquisitions %}
+                            <li class="list-group-item">
+                                {{ asset.asset_type.name }} - {{ asset.asset_number }} 
+                                (Purchased: {{ asset.purchase_date|date:"Y-m-d" }})
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
+
 <script>
-    $(document).ready(function() {
-        $.get('{% url "asset_allocation_chart" %}', function(data) {
-            var ctx = document.getElementById('assetAllocationChart').getContext('2d');
-            new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: data.labels,
-                    datasets: [{
-                        label: 'Allocated',
-                        data: data.datasets[0],
-                        backgroundColor: data.colors[0],
-                    }, {
-                        label: 'Unallocated',
-                        data: data.datasets[1],
-                        backgroundColor: data.colors[1],
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    scales: {
-                        x: {
-                            stacked: true,
-                        },
-                        y: {
-                            stacked: true
-                        }
-                    }
-                }
-            });
-        });
+    // Retrieve data from embedded scripts
+    const assetTypeData = JSON.parse(document.getElementById('asset-types-data').textContent);
+    const valueOverTimeData = JSON.parse(document.getElementById('value-over-time-data').textContent);
+    const topDepartmentsData = JSON.parse(document.getElementById('top-departments-data').textContent);
+    const depreciationData = JSON.parse(document.getElementById('depreciation-data').textContent);
+
+    // Asset Allocation Chart
+    var ctx = document.getElementById('assetAllocationChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: assetTypeData.map(item => item.name),
+            datasets: [{
+                label: 'Allocated',
+                data: assetTypeData.map(item => item.allocated),
+                backgroundColor: 'rgba(75, 192, 192, 0.6)'
+            }, {
+                label: 'Unallocated',
+                data: assetTypeData.map(item => item.total - item.allocated),
+                backgroundColor: 'rgba(255, 99, 132, 0.6)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { stacked: true },
+                y: { stacked: true, beginAtZero: true }
+            }
+        }
+    });
+
+    // Asset Value Over Time Chart
+    ctx = document.getElementById('assetValueChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: valueOverTimeData.map(item => item.date),
+            datasets: [{
+                label: 'Total Asset Value',
+                data: valueOverTimeData.map(item => item.value),
+                borderColor: 'rgba(75, 192, 192, 1)',
+                fill: false
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { beginAtZero: true }
+            }
+        }
+    });
+
+    // Top Departments Chart
+    ctx = document.getElementById('topDepartmentsChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: topDepartmentsData.map(item => item.name),
+            datasets: [{
+                data: topDepartmentsData.map(item => item.asset_count),
+                backgroundColor: [
+                    'rgba(255, 99, 132, 0.6)',
+                    'rgba(54, 162, 235, 0.6)',
+                    'rgba(255, 206, 86, 0.6)',
+                    'rgba(75, 192, 192, 0.6)',
+                    'rgba(153, 102, 255, 0.6)'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    });
+
+    // Depreciation Chart
+    ctx = document.getElementById('depreciationChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Current Value', 'Depreciation'],
+            datasets: [{
+                data: [depreciationData.currentValue, depreciationData.depreciation],
+                backgroundColor: ['rgba(75, 192, 192, 0.6)', 'rgba(255, 99, 132, 0.6)']
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false
+        }
     });
 </script>
+
 {% endblock %}
+
 

@@ -59,7 +59,7 @@
         </tbody>
     </table>
 
-    <a href="{% url 'user_update' user.pk %}" class="btn btn-primary">Edit User</a>
+    {%if user.is.staff%}<a href="{% url 'user_update' user.pk %}" class="btn btn-primary">Edit User</a>{% endif %}
     <a href="{% url 'user_list' %}" class="btn btn-secondary">Back to User List</a>
 </div>
 {% endblock %}

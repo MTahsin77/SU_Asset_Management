@@ -6,6 +6,8 @@ from django.contrib.auth.views import LogoutView
 from django.views.decorators.http import require_http_methods
 import tempfile
 import os
+from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 from django.http import HttpResponse
 from decimal import Decimal
 from datetime import datetime, timedelta
@@ -80,14 +82,6 @@ def dashboard(request):
     total_current_value = Asset.objects.aggregate(total=Sum('current_value'))['total'] or 0
     total_depreciation = total_purchase_value - total_current_value
 
-    # Prepare JSON data
-    asset_types_json = list(asset_types.values('name', 'total', 'allocated'))
-    value_over_time_json = value_over_time
-    top_departments_json = list(top_departments.values('name', 'asset_count'))
-    depreciation_data = {
-        'currentValue': float(total_current_value),
-        'depreciation': float(total_depreciation)
-    }
     context = {
         'total_assets': total_assets,
         'allocated_assets': allocated_assets,
@@ -99,13 +93,16 @@ def dashboard(request):
         'total_purchase_value': total_purchase_value,
         'total_current_value': total_current_value,
         'total_depreciation': total_depreciation,
-        'asset_types_json': asset_types_json,
-        'value_over_time_json': value_over_time_json,
-        'top_departments_json': top_departments_json,
-        'total_current_value': total_current_value,
-        'total_depreciation': total_depreciation,
+        'asset_types_json': json.dumps(list(asset_types.values('name', 'total', 'allocated')), cls=DjangoJSONEncoder),
+        'value_over_time_json': json.dumps(value_over_time, cls=DjangoJSONEncoder),
+        'top_departments_json': json.dumps(list(top_departments.values('name', 'asset_count')), cls=DjangoJSONEncoder),
+        'depreciation_data': json.dumps({
+            'currentValue': float(total_current_value),
+            'depreciation': float(total_depreciation)
+        }, cls=DjangoJSONEncoder),
     }
     return render(request, 'assets/dashboard.html', context)
+
 def admin_login(request):
     if request.method == 'POST':
         username = request.POST['username']
@@ -433,18 +430,29 @@ def user_delete(request, pk):
     return render(request, 'assets/user_confirm_delete.html', {'user': user})
 
 @staff_member_required
+@require_POST
+@csrf_exempt
 def allocate_asset(request):
-    if request.method == 'POST':
-        form = AllocationForm(request.POST)
-        if form.is_valid():
-            allocation = form.save()
-            allocation.asset.is_allocated = True
-            allocation.asset.save()
-            messages.success(request, 'Asset allocated successfully.')
-            return redirect('asset_detail', pk=allocation.asset.pk)
-    else:
-        form = AllocationForm()
-    return render(request, 'assets/allocation_form.html', {'form': form})
+    data = json.loads(request.body)
+    asset_id = data.get('asset_id')
+    user_id = data.get('user_id')
+    assigned_date = data.get('assigned_date')
+
+    try:
+        asset = Asset.objects.get(id=asset_id)
+        user = User.objects.get(id=user_id)
+        
+        allocation, created = Allocation.objects.update_or_create(
+            asset=asset,
+            defaults={'user': user, 'assigned_date': assigned_date}
+        )
+        
+        asset.is_allocated = True
+        asset.save()
+
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
 
 @staff_member_required
 def deallocate_asset(request, pk):

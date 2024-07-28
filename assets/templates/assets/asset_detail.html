@@ -1,29 +1,69 @@
 {% extends "base.html" %}
+{% load static %}
 
-{% block title %}Asset Detail{% endblock %}
+{% block title %}Asset Detail - {{ asset.asset_number }}{% endblock %}
 
-{% block content %}
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <style>
+    .asset-detail-container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+    }
     h1 {
-        color: #e84253;
+        color: #2c3e50;
+        border-bottom: 2px solid #e84253;
+        padding-bottom: 10px;
+        margin-bottom: 30px;
     }
-
-    p {
-        font-size: 1.1rem;
-        color: #000000;
+    .asset-info {
+        background-color: #ffffff;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 25px;
+        margin-bottom: 30px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-
-    a {
-        color: #e84253;
-        text-decoration: none;
-        margin-right: 10px;
+    .asset-info h2 {
+        color: #2c3e50;
+        margin-bottom: 20px;
+        font-size: 1.5rem;
+        border-bottom: 1px solid #e0e0e0;
+        padding-bottom: 10px;
     }
-
-    a:hover {
-        color: #d73a4b;
-        text-decoration: underline;
+    .info-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 15px;
     }
-
+    .info-label {
+        font-weight: bold;
+        color: #34495e;
+        flex-basis: 40%;
+    }
+    .info-value {
+        flex-basis: 60%;
+        color: #2c3e50;
+    }
+    .status-badge {
+        display: inline-block;
+        padding: 5px 10px;
+        border-radius: 20px;
+        font-size: 0.9rem;
+        font-weight: bold;
+    }
+    .status-allocated {
+        background-color: #2ecc71;
+        color: white;
+    }
+    .status-available {
+        background-color: #3498db;
+        color: white;
+    }
     .btn {
         display: inline-block;
         padding: 10px 20px;
@@ -31,71 +71,133 @@
         border: none;
         border-radius: 5px;
         text-decoration: none;
-        margin-top: 10px;
+        margin-top: 20px;
+        transition: background-color 0.3s ease;
     }
-
     .btn-edit {
-        background-color: #d73a4b;
-        color: #ffffff;
-    }
-
-    .btn-edit:hover {
-        background-color: #d45858;
-    }
-
-    .btn-deallocate, .btn-allocate {
         background-color: #e84253;
         color: #ffffff;
     }
-
-    .btn-deallocate:hover, .btn-allocate:hover {
+    .btn-edit:hover {
         background-color: #d73a4b;
     }
-
-    .asset-info {
-        background-color: #f8f9fa;
-        border: 1px solid #dee2e6;
-        border-radius: 5px;
-        padding: 20px;
-        margin-bottom: 20px;
+    .btn-allocate {
+        background-color: #d84f45;
+        color: #ffffff;
     }
-
-    .asset-info h2 {
-        color: #e84253;
-        margin-bottom: 15px;
+    .btn-allocate:hover {
+        background-color: #d82e2e;
+    }
+    .btn-deallocate {
+        background-color: #e74c3c;
+        color: #ffffff;
+    }
+    .btn-deallocate:hover {
+        background-color: #c0392b;
+    }
+    .btn-back {
+        background-color: #3498db;
+        color: #ffffff;
+    }
+    .btn-back:hover {
+        background-color: #2980b9;
+    }
+    .button-container {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 20px;
+    }
+    .date-picker, .user-select {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        margin-bottom: 10px;
     }
 </style>
+{% endblock %}
 
-<h1>Asset Detail</h1>
+{% block content %}
+<div class="asset-detail-container">
+    <h1>Asset Detail: {{ asset.asset_number }}</h1>
 
-<div class="asset-info">
-    <h2>General Information</h2>
-    <p><strong>Type:</strong> {{ asset.asset_type }}</p>
-    <p><strong>Number:</strong> {{ asset.asset_number }}</p>
-    <p><strong>Department:</strong> {{ asset.department }}</p>
-    <p><strong>Location:</strong> {{ asset.location }}</p>
-    <p><strong>Room Number:</strong> {{ asset.room_number }}</p>
+    <div class="asset-info">
+        <h2>General Information</h2>
+        <div class="info-row">
+            <span class="info-label">Asset Type:</span>
+            <span class="info-value">{{ asset.asset_type }}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Asset Number:</span>
+            <span class="info-value">{{ asset.asset_number }}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Department:</span>
+            <span class="info-value">{{ asset.department }}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Location:</span>
+            <span class="info-value">{{ asset.location }}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Room Number:</span>
+            <span class="info-value">{{ asset.room_number }}</span>
+        </div>
+    </div>
+
+    <div class="asset-info">
+        <h2>Financial Information</h2>
+        <div class="info-row">
+            <span class="info-label">Purchase Date:</span>
+            <span class="info-value">{{ asset.purchase_date|date:"F d, Y" }}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Purchase Value:</span>
+            <span class="info-value">£{{ asset.purchase_value|floatformat:2 }}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Current Value:</span>
+            <span class="info-value">£{{ asset.current_value|floatformat:2 }}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Depreciation Date:</span>
+            <span class="info-value">{{ asset.depreciation_date|date:"F d, Y" }}</span>
+        </div>
+    </div>
+
+    <div class="asset-info">
+        <h2>Status</h2>
+        <div class="info-row">
+            <span class="info-label">Allocation Status:</span>
+            <span class="info-value">
+                {% if asset.is_allocated %}
+                    <span class="status-badge status-allocated">Allocated</span>
+                {% else %}
+                    <span class="status-badge status-available">Available</span>
+                {% endif %}
+            </span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Sticker Deployed:</span>
+            <span class="info-value">{% if asset.sticker_deployed %}Yes{% else %}No{% endif %}</span>
+        </div>
+        {% if asset.is_allocated %}
+            <div class="info-row">
+                <span class="info-label">Allocated to:</span>
+                <span class="info-value">{{ asset.assigned_to.name }}</span>
+            </div>
+        {% endif %}
+
+    <div class="button-container">
+        <div>
+            <a href="{% url 'asset_list' %}" class="btn btn-back">Back to Assets</a>
+            
+        </div>
+        {%if user.is.staff %}
+        <a href="{% url 'asset_update' asset.pk %}" class="btn btn-allocate">Edit Asset</a>
+        {% endif %}
+    </div>
 </div>
 
-<div class="asset-info">
-    <h2>Financial Information</h2>
-    <p><strong>Purchase Date:</strong> {{ asset.purchase_date }}</p>
-    <p><strong>Purchase Value:</strong> £{{ asset.purchase_value|floatformat:2 }}</p>
-    <p><strong>Current Value:</strong> £{{ asset.current_value|floatformat:2 }}</p>
-    <p><strong>Depreciation Date:</strong> {{ asset.depreciation_date }}</p>
-</div>
-
-<div class="asset-info">
-    <h2>Status</h2>
-    <p><strong>Allocation Status:</strong> {% if asset.is_allocated %}Allocated{% else %}Available{% endif %}</p>
-    <p><strong>Sticker Deployed:</strong> {% if asset.sticker_deployed %}Yes{% else %}No{% endif %}</p>
-
-    <p><strong>Allocated to:</strong> {{ current_allocation.user }}</p>
-    <p><strong>Assigned Date:</strong> {{ current_allocation.assigned_date }}</p>
-    {% if user.is_staff %}
-    <a href="{% url 'asset_update' asset.pk %}" class="btn btn-edit">Edit Asset</a>
-    {% endif %}
-</div>
-
-
+</script>
 {% endblock %}
