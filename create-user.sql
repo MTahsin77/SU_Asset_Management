@@ -1,0 +1,3 @@
+CREATE USER 'suams_user'@'%' IDENTIFIED WITH mysql_native_password BY '030700';
+GRANT ALL PRIVILEGES ON *.* TO 'suams_user'@'%' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
